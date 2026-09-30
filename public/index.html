@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,7 +8,7 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Inter, Arial, sans-serif; background: #f7f8fc; color: #171923; }
-    button, input, textarea, select { font: inherit; }
+    button, input, textarea { font: inherit; }
 
     /* AUTH PAGE STYLES */
     #authContainer { display: flex; height: 100vh; justify-content: center; align-items: center; background: linear-gradient(135deg, #635bff, #8b5cf6); }
@@ -34,7 +33,7 @@
     .main { margin-left: 260px; width: calc(100% - 260px); min-height: 100vh; }
     .header { height: 72px; background: white; border-bottom: 1px solid #e8eaf0; display: flex; align-items: center; justify-content: space-between; padding: 0 35px; }
     .logout-btn { padding: 8px 16px; background: #fee2e2; color: #dc2626; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
-
+    
     .content { padding: 35px; max-width: 1450px; margin: auto; }
     .welcome h1 { font-size: 28px; margin-bottom: 7px; }
     .welcome p { color: #777d8c; font-size: 14px; margin-bottom: 25px; }
@@ -50,31 +49,13 @@
     /* MODAL */
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
     .modal { background: white; padding: 30px; border-radius: 14px; width: 500px; max-width: 90%; max-height: 85vh; overflow-y: auto; }
-    .modal textarea, .modal input, .modal select { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; outline: none; }
+    .modal textarea, .modal input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; outline: none; }
     .modal textarea { height: 110px; }
     .modal-buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
     .modal-buttons button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
     .btn-primary { background: #635bff; color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; display: inline-block; }
     .btn-secondary { background: #e2e8f0; color: #333; }
     .summary-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 10px; max-height: 300px; overflow-y: auto; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
-
-    /* PDF PREVIEW FEATURE */
-    .pdf-preview { width: 100%; height: 65vh; min-height: 420px; border: 1px solid #e2e8f0; border-radius: 8px; margin-top: 15px; background: #f8fafc; }
-    .pdf-preview-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
-
-    @media (max-width: 900px) {
-      .tools-grid { grid-template-columns: repeat(2, 1fr); }
-      .sidebar { width: 220px; }
-      .main { margin-left: 220px; width: calc(100% - 220px); }
-    }
-    @media (max-width: 600px) {
-      .sidebar { position: relative; width: 100%; bottom: auto; }
-      .main { margin-left: 0; width: 100%; }
-      .app { flex-direction: column; }
-      .tools-grid { grid-template-columns: 1fr; }
-      .content { padding: 20px; }
-      .header { padding: 0 20px; }
-    }
   </style>
 </head>
 <body>
@@ -236,7 +217,6 @@
     currentTool = tool;
     modalTitle.textContent = tool;
     modalButtonsContainer.style.display = 'flex';
-
     if (tool === 'AI PDF Generator') {
       modalBody.innerHTML = `<label>Prompt:</label><textarea id="toolInputText"></textarea>`;
     } else if (tool === 'Remove Page') {
@@ -245,50 +225,9 @@
       modalBody.innerHTML = `<label>PDF File:</label><input type="file" id="toolInputFile" accept=".pdf"/><label>New Page Order (e.g., 2,1,3):</label><input type="text" id="toolInputPage"/>`;
     } else if (tool === 'PDF Summarizer') {
       modalBody.innerHTML = `<label>PDF File to Summarize:</label><input type="file" id="toolInputFile" accept=".pdf"/>`;
-    } else if (tool === 'Compress PDF') {
-      modalBody.innerHTML = `
-        <label>PDF File:</label>
-        <input type="file" id="toolInputFile" accept=".pdf"/>
-
-        <label>Target compressed size:</label>
-        <input type="number" id="targetSize" min="1"
-          placeholder="e.g., 500" required/>
-
-        <label>Unit:</label>
-        <select id="targetUnit">
-          <option value="KB">KB</option>
-          <option value="MB">MB</option>
-        </select>
-
-        <p style="font-size:13px;color:#777;margin-top:5px;">
-          Enter the maximum file size you want. The result may be larger
-          if the PDF cannot be compressed enough.
-        </p>
-      `;
-    } else if (tool === 'Expand PDF') {
-      modalBody.innerHTML = `
-        <label>PDF File:</label>
-        <input type="file" id="toolInputFile" accept=".pdf"/>
-
-        <label>Target expanded size:</label>
-        <input type="number" id="targetSize" min="1"
-          placeholder="e.g., 5" required/>
-
-        <label>Unit:</label>
-        <select id="targetUnit">
-          <option value="KB">KB</option>
-          <option value="MB" selected>MB</option>
-        </select>
-
-        <p style="font-size:13px;color:#777;margin-top:5px;">
-          Enter the desired minimum file size. Expansion increases file
-          size, not PDF resolution or visual quality.
-        </p>
-      `;
     } else {
       modalBody.innerHTML = `<label>Document File:</label><input type="file" id="toolInputFile" accept=".pdf,.docx,.pptx"/>`;
     }
-
     modalOverlay.style.display = 'flex';
   }
 
@@ -336,19 +275,6 @@
     }
   }
 
-  // PDF PREVIEW FEATURE
-  function showPdfPreview(fileUrl, downloadLabel) {
-    const safeUrl = String(fileUrl || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-    modalBody.innerHTML = `
-      <p style="color:green;font-weight:600;">PDF ready to preview.</p>
-      <iframe class="pdf-preview" src="${safeUrl}#toolbar=1&navpanes=0" title="Generated PDF Preview"></iframe>
-      <div class="pdf-preview-actions">
-        <a href="${safeUrl}" target="_blank" rel="noopener" class="btn-secondary" style="text-decoration:none;padding:8px 16px;border-radius:6px;">Open in New Tab</a>
-        <a href="${safeUrl}" download class="btn-primary">${downloadLabel}</a>
-      </div>
-    `;
-  }
-
   document.getElementById('modalSubmit').onclick = async () => {
     const token = localStorage.getItem('token');
     const fileInput = document.getElementById('toolInputFile');
@@ -365,48 +291,12 @@
       });
       const data = await res.json();
       if (data.success) {
-        showPdfPreview(data.fileUrl, 'Download PDF');
-      } else {
-        alert(data.error);
-        modalOverlay.style.display = 'none';
-      }
+        modalBody.innerHTML = `<p style="color:green;font-weight:600;">Success!</p><a href="${data.fileUrl}" target="_blank" class="btn-primary">Download PDF</a>`;
+      } else { alert(data.error); modalOverlay.style.display = 'none'; }
     } else {
       if (!fileInput || !fileInput.files[0]) return alert('Select a file.');
       const formData = new FormData();
       formData.append('file', fileInput.files[0]);
-
-      // MANUAL TARGET SIZE: compression and expansion
-      if (currentTool === 'Compress PDF' || currentTool === 'Expand PDF') {
-        const sizeInput = document.getElementById('targetSize');
-        const unitInput = document.getElementById('targetUnit');
-
-        const targetSize = Number(sizeInput.value);
-        const targetUnit = unitInput.value;
-
-        if (!Number.isFinite(targetSize) || targetSize <= 0) {
-          return alert('Enter a valid target size greater than zero.');
-        }
-
-        const targetBytes = targetSize *
-          (targetUnit === 'MB' ? 1024 * 1024 : 1024);
-
-        if (targetBytes < 1024 || targetBytes > 100 * 1024 * 1024) {
-          return alert('Choose a target size between 1 KB and 100 MB.');
-        }
-
-        const originalBytes = fileInput.files[0].size;
-
-        if (currentTool === 'Compress PDF' && targetBytes >= originalBytes) {
-          return alert('The target size must be smaller than the original PDF.');
-        }
-
-        if (currentTool === 'Expand PDF' && targetBytes <= originalBytes) {
-          return alert('The target size must be larger than the original PDF.');
-        }
-
-        formData.append('targetSizeBytes', String(targetBytes));
-      }
-
       if (currentTool === 'Remove Page') {
         const page = document.getElementById('toolInputPage').value;
         if (!page) return alert('Specify pages.');
@@ -416,7 +306,7 @@
         if (!pageOrder) return alert('Specify the new page order.');
         formData.append('pageOrder', pageOrder);
       }
-
+      
       const endpoints = {
         'PDF Summarizer': '/api/pdf/summarize-pdf',
         'PDF to Word': '/api/pdf/pdf-to-word',
@@ -437,7 +327,6 @@
         body: formData
       });
       const data = await res.json();
-
       if (data.success) {
         if (currentTool === 'PDF Summarizer') {
           modalButtonsContainer.style.display = 'none';
@@ -448,21 +337,10 @@
               <button class="btn-primary" onclick="document.getElementById('toolModal').style.display='none'">Close</button>
             </div>
           `;
-        } else if (
-          currentTool === 'PDF to Word' ||
-          currentTool === 'PDF to PowerPoint'
-        ) {
-          modalBody.innerHTML = `
-            <p style="color:green;font-weight:600;">Done!</p>
-            <a href="${data.fileUrl}" target="_blank" class="btn-primary">Download File</a>
-          `;
         } else {
-          showPdfPreview(data.fileUrl, 'Download File');
+          modalBody.innerHTML = `<p style="color:green;font-weight:600;">Done!</p><a href="${data.fileUrl}" target="_blank" class="btn-primary">Download File</a>`;
         }
-      } else {
-        alert(data.error);
-        modalOverlay.style.display = 'none';
-      }
+      } else { alert(data.error); modalOverlay.style.display = 'none'; }
     }
   };
 </script>

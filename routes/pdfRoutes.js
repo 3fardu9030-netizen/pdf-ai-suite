@@ -3,11 +3,6 @@ const router = express.Router();
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-
-const { execFile } = require('child_process');
-const { promisify } = require('util');
-const execFileAsync = promisify(execFile);
-
 const jwt = require('jsonwebtoken');
 const { PDFParse } = require('pdf-parse');
 const { Document, Packer, Paragraph, TextRun } = require('docx');
@@ -17,6 +12,8 @@ const { PDFDocument: PDFLibDocument } = require('pdf-lib');
 const pptxgen = require('pptxgenjs');
 const JSZip = require('jszip');
 const DocumentModel = require('../models/Document');
+
+const JWT_SECRET = 'your_super_secret_jwt_key_here';
 
 // Auth Middleware
 function verifyToken(req, res, next) {
@@ -66,36 +63,6 @@ async function saveHistoryRecord(userId, title, fileUrl, fileType) {
   } catch (err) {
     console.error('Failed to save document history record:', err);
   }
-}
-function parseTargetBytes(value) {
-  const match = String(value || '').trim().match(
-    /^(\d+(?:\.\d+)?)\s*(B|KB|MB)$/i
-  );
-
-  if (!match) return null;
-
-  const amount = Number(match[1]);
-  const unit = match[2].toUpperCase();
-  const multiplier = {
-    B: 1,
-    KB: 1024,
-    MB: 1024 * 1024
-  };
-
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-
-  return Math.floor(amount * multiplier[unit]);
-}
-
-function sizeReport(originalBytes, newBytes, targetBytes) {
-  return {
-    originalSize: originalBytes,
-    newSize: newBytes,
-    targetSize: targetBytes,
-    percentageChange: Number(
-      (((newBytes - originalBytes) / originalBytes) * 100).toFixed(2)
-    )
-  };
 }
 
 // Helper: Automatically chunk bullets across multiple slides to prevent overcrowding
@@ -199,242 +166,62 @@ router.post('/summarize-pdf', verifyToken, upload.single('file'), async (req, re
     res.status(500).json({ success: false, error: err.message });
   }
 });
-// ============================================
-// LIBREOFFICE CONVERSION HELPER
-// ============================================
-
-async function convertWithLibreOffice(
-  inputPath,
-  outputDir,
-  outputExtension,
-  inputFilter = null
-) {
-  const soffice = process.env.SOFFICE_PATH || 'soffice';
-
-  const args = [
-    '--headless',
-    '--nologo',
-    '--nodefault',
-    '--nolockcheck'
-  ];
-
-  if (inputFilter) {
-    args.push(`--infilter=${inputFilter}`);
-  }
-
-  args.push(
-    '--convert-to',
-    outputExtension,
-    '--outdir',
-    outputDir,
-    inputPath
-  );
-
-  try {
-    const result = await execFileAsync(soffice, args, {
-      maxBuffer: 20 * 1024 * 1024
-    });
-
-    console.log(
-      `[LibreOffice] ${path.basename(inputPath)} -> ${outputExtension}`
-    );
-
-    if (result.stdout) {
-      console.log(result.stdout.trim());
-    }
-
-    if (result.stderr) {
-      console.log(result.stderr.trim());
-    }
-
-  } catch (err) {
-
-    const details =
-      err.stderr ||
-      err.stdout ||
-      err.message ||
-      String(err);
-
-    throw new Error(
-      `LibreOffice conversion failed. Make sure LibreOffice is installed. ${details}`
-    );
-  }
-
-  const generatedPath = path.join(
-    outputDir,
-    `${path.parse(inputPath).name}.${outputExtension}`
-  );
-
-  if (!fs.existsSync(generatedPath)) {
-    throw new Error(
-      `LibreOffice finished but the expected output was not created: ${generatedPath}`
-    );
-  }
-
-  return generatedPath;
-}
 
 // 2. PDF to Word
-// ============================================
-// PDF TO WORD
-// ============================================
+router.post('/pdf-to-word', verifyToken, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
+    const dataBuffer = fs.readFileSync(req.file.path);
+    const parser = new PDFParse({ data: dataBuffer });
+    const pdfData = await parser.getText();
+    await parser.destroy();
+    
+    const extractedText = pdfData.text || 'No text found in PDF.';
+    const doc = new Document({
+      sections: [{ properties: {}, children: extractedText.split('\n').map(line => new Paragraph({ children: [new TextRun(line)] })) }]
+    });
 
-router.post(
-  '/pdf-to-word',
-  verifyToken,
-  upload.single('file'),
-  async (req, res) => {
+    const wordBuffer = await Packer.toBuffer(doc);
+    const outputFilename = 'converted-' + Date.now() + '-' + path.parse(req.file.originalname).name + '.docx';
+    const outputPath = path.join('uploads', outputFilename);
+    fs.writeFileSync(outputPath, wordBuffer);
 
-    try {
-
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          error: 'No file uploaded'
-        });
-      }
-
-      const outputDir = path.resolve('uploads');
-
-      const generatedPath = await convertWithLibreOffice(
-        path.resolve(req.file.path),
-        outputDir,
-        'docx',
-        'writer_pdf_import'
-      );
-
-      const outputFilename =
-        'converted-' +
-        Date.now() +
-        '-' +
-        path.parse(req.file.originalname).name +
-        '.docx';
-
-      const outputPath = path.join(
-        outputDir,
-        outputFilename
-      );
-
-      fs.renameSync(
-        generatedPath,
-        outputPath
-      );
-
-      const fileUrl =
-        `/uploads/${outputFilename}`;
-
-      const title =
-        `${req.file.originalname} (Word)`;
-
-      await saveHistoryRecord(
-        req.user.userId,
-        title,
-        fileUrl,
-        'docx'
-      );
-
-      res.json({
-        success: true,
-        fileUrl,
-        title
-      });
-
-    } catch (err) {
-
-      console.error(
-        'PDF to Word error:',
-        err
-      );
-
-      res.status(500).json({
-        success: false,
-        error: err.message
-      });
-    }
+    const fileUrl = `/uploads/${outputFilename}`;
+    const title = `${req.file.originalname} (Word)`;
+    await saveHistoryRecord(req.user.userId, title, fileUrl, 'docx');
+    res.json({ success: true, fileUrl, title });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
-);
+});
 
 // 3. Word to PDF
-// ============================================
-// WORD TO PDF
-// ============================================
+router.post('/word-to-pdf', verifyToken, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
+    const result = await mammoth.extractRawText({ path: req.file.path });
+    const extractedText = result.value || 'No text found.';
 
-router.post(
-  '/word-to-pdf',
-  verifyToken,
-  upload.single('file'),
-  async (req, res) => {
+    const outputFilename = 'converted-' + Date.now() + '-' + path.parse(req.file.originalname).name + '.pdf';
+    const outputPath = path.join('uploads', outputFilename);
+    const doc = new PDFDocument();
+    const stream = fs.createWriteStream(outputPath);
+    doc.pipe(stream);
+    doc.fontSize(16).text(`Converted from: ${req.file.originalname}`, { underline: true });
+    doc.moveDown();
+    doc.fontSize(12).text(extractedText);
+    doc.end();
 
-    try {
-
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          error: 'No file uploaded'
-        });
-      }
-
-      const outputDir =
-        path.resolve('uploads');
-
-      const generatedPath =
-        await convertWithLibreOffice(
-          path.resolve(req.file.path),
-          outputDir,
-          'pdf'
-        );
-
-      const outputFilename =
-        'converted-' +
-        Date.now() +
-        '-' +
-        path.parse(req.file.originalname).name +
-        '.pdf';
-
-      const outputPath =
-        path.join(
-          outputDir,
-          outputFilename
-        );
-
-      fs.renameSync(
-        generatedPath,
-        outputPath
-      );
-
-      const fileUrl =
-        `/uploads/${outputFilename}`;
-
-      const title =
-        `${req.file.originalname} (PDF)`;
-
-      await saveHistoryRecord(
-        req.user.userId,
-        title,
-        fileUrl,
-        'pdf'
-      );
-
-      res.json({
-        success: true,
-        fileUrl,
-        title
-      });
-
-    } catch (err) {
-
-      console.error(
-        'Word to PDF error:',
-        err
-      );
-
-      res.status(500).json({
-        success: false,
-        error: err.message
-      });
-    }
+    stream.on('finish', async () => {
+      const fileUrl = `/uploads/${outputFilename}`;
+      const title = `${req.file.originalname} (PDF)`;
+      await saveHistoryRecord(req.user.userId, title, fileUrl, 'pdf');
+      res.json({ success: true, fileUrl, title });
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
-);
+});
 
 // 4. PDF/Image to PowerPoint (Supports Smart Multi-Slide Chunking & Image Inputs)
 router.post('/pdf-to-powerpoint', verifyToken, upload.single('file'), async (req, res) => {
@@ -595,191 +382,47 @@ router.post('/powerpoint-to-pdf', verifyToken, upload.single('file'), async (req
 });
 
 // 6. Compress PDF
-// 6. Compress PDF (Manual Target Size)
-
-
 router.post('/compress-pdf', verifyToken, upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: 'No PDF uploaded'
-      });
-    }
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
+    const pdfDoc = await PDFLibDocument.load(fs.readFileSync(req.file.path));
+    const compressedBytes = await pdfDoc.save({ useObjectStreams: true });
 
-    const targetBytes = Number(req.body.targetSizeBytes);
-
-    if (
-      !Number.isSafeInteger(targetBytes) ||
-      targetBytes < 1024 ||
-      targetBytes > 100 * 1024 * 1024
-    ) {
-      return res.status(400).json({
-        success: false,
-        error: 'Enter a valid target size between 1 KB and 100 MB.'
-      });
-    }
-
-    const originalBuffer = fs.readFileSync(req.file.path);
-    const originalBytes = originalBuffer.length;
-
-    if (targetBytes >= originalBytes) {
-      return res.status(400).json({
-        success: false,
-        error: 'The compression target must be smaller than the original PDF.'
-      });
-    }
-
-    const pdfDoc = await PDFLibDocument.load(originalBuffer);
-
-    const compressedBytes = await pdfDoc.save({
-      useObjectStreams: true
-    });
-
-    if (compressedBytes.length >= originalBytes) {
-      return res.status(422).json({
-        success: false,
-        error: 'This PDF could not be reduced using the current compression method.',
-        originalSize: originalBytes,
-        achievedSize: compressedBytes.length,
-        targetSize: targetBytes
-      });
-    }
-
-    // Save the reduced PDF even if it misses the requested target.
-    const outputFilename =
-      'compressed-' + Date.now() + '-' +
-      path.parse(req.file.originalname).name + '.pdf';
-
+    const outputFilename = 'compressed-' + Date.now() + '-' + path.parse(req.file.originalname).name + '.pdf';
     const outputPath = path.join('uploads', outputFilename);
-
     fs.writeFileSync(outputPath, compressedBytes);
 
     const fileUrl = `/uploads/${outputFilename}`;
     const title = `${req.file.originalname} (Compressed)`;
-
-    await saveHistoryRecord(
-      req.user.userId,
-      title,
-      fileUrl,
-      'pdf'
-    );
-
-    const achievedTarget = compressedBytes.length <= targetBytes;
-
-    res.json({
-      success: true,
-      fileUrl,
-      title,
-      message: achievedTarget
-        ? 'PDF compressed and requested target achieved.'
-        : 'PDF reduced, but the requested target could not be reached. You can still download the reduced PDF.',
-      targetAchieved: achievedTarget,
-      ...sizeReport(
-        originalBytes,
-        compressedBytes.length,
-        targetBytes
-      )
-    });
-
+    await saveHistoryRecord(req.user.userId, title, fileUrl, 'pdf');
+    res.json({ success: true, fileUrl, title });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // 7. Expand PDF
-// 7. Expand PDF (Manual Target Size)
-
 router.post('/expand-pdf', verifyToken, upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: 'No PDF uploaded'
-      });
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
+    const pdfDoc = await PDFLibDocument.load(fs.readFileSync(req.file.path));
+    const pages = pdfDoc.getPages();
+    if (pages.length > 0) {
+      const copiedPage = await pdfDoc.copyPages(pdfDoc, [0]);
+      pdfDoc.addPage(copiedPage[0]);
     }
 
-    const targetBytes = Number(req.body.targetSizeBytes);
-
-if (
-  !Number.isSafeInteger(targetBytes) ||
-  targetBytes < 1024 ||
-  targetBytes > 100 * 1024 * 1024
-) {
-  return res.status(400).json({
-    success: false,
-    error: 'Enter a valid target size between 1 KB and 100 MB.'
-  });
-}
-
-    const originalBuffer = fs.readFileSync(req.file.path);
-    const originalBytes = originalBuffer.length;
-
-    if (targetBytes <= originalBytes) {
-      return res.status(400).json({
-        success: false,
-        error: 'The expansion target must be larger than the original PDF.'
-      });
-    }
-
-    const pdfDoc = await PDFLibDocument.load(originalBuffer);
-
-    const baseBytes = await pdfDoc.save({
-      useObjectStreams: true
-    });
-
-    if (baseBytes.length > targetBytes) {
-      return res.status(422).json({
-        success: false,
-        error: 'The processed PDF is already larger than the requested target.'
-      });
-    }
-
-    const paddingLength = targetBytes - baseBytes.length;
-    const padding = Buffer.alloc(paddingLength, 0x20);
-
-    const expandedBytes = Buffer.concat([
-      Buffer.from(baseBytes),
-      padding
-    ]);
-
-    const outputFilename =
-      'expanded-' + Date.now() + '-' +
-      path.parse(req.file.originalname).name + '.pdf';
-
+    const expandedBytes = await pdfDoc.save();
+    const outputFilename = 'expanded-' + Date.now() + '-' + path.parse(req.file.originalname).name + '.pdf';
     const outputPath = path.join('uploads', outputFilename);
-
     fs.writeFileSync(outputPath, expandedBytes);
 
     const fileUrl = `/uploads/${outputFilename}`;
     const title = `${req.file.originalname} (Expanded)`;
-
-    await saveHistoryRecord(
-      req.user.userId,
-      title,
-      fileUrl,
-      'pdf'
-    );
-
-    res.json({
-      success: true,
-      fileUrl,
-      title,
-      ...sizeReport(
-        originalBytes,
-        expandedBytes.length,
-        targetBytes
-      )
-    });
-
+    await saveHistoryRecord(req.user.userId, title, fileUrl, 'pdf');
+    res.json({ success: true, fileUrl, title });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
